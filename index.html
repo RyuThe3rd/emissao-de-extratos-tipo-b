@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light">
+  <title>Emissão e Ancoragem — Extrato Tipo B</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- QR em modo Byte: suporta bytes CBOR arbitrários sem passar por UTF-8. -->
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/lib/browser.min.js"></script>
+  <style>
+    .bg-custom-gradient { background: linear-gradient(165deg, #0d72c4 0%, #188a87 54%, #269a57 100%); }
+    .field { width:100%; background:#f8fafc; border:1px solid #cbd5e1; border-radius:.75rem; padding:.65rem .85rem; color:#0f172a; font-size:.9rem; }
+    .field:focus { outline:none; border-color:#2563eb; box-shadow:0 0 0 3px #dbeafe; }
+    .field-label { display:block; font-size:.7rem; font-weight:800; letter-spacing:.04em; text-transform:uppercase; color:#475569; margin-bottom:.4rem; }
+    .card { border:1px solid #e2e8f0; border-radius:1rem; background:#fff; padding:1rem; }
+    .tabular { font-variant-numeric: tabular-nums; }
+    #qrcode canvas { display:block; max-width:100%; height:auto; margin-inline:auto; image-rendering:pixelated; }
+    .muted-note { font-size:.76rem; color:#64748b; }
+  </style>
+</head>
+<body class="bg-custom-gradient min-h-screen flex items-start justify-center p-4 sm:p-7 text-slate-800 font-sans">
+  <main class="bg-white/95 rounded-3xl shadow-2xl border border-white/20 p-5 sm:p-8 w-full max-w-4xl my-4">
+    <header class="flex flex-wrap items-center justify-between gap-4 mb-6">
+      <div class="flex items-center gap-3">
+        <div class="w-12 h-12 rounded-2xl bg-blue-600 flex items-center justify-center text-white shadow-md">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5.586a1 1 0 0 1 .707.293l5.414 5.414a1 1 0 0 1 .293.707V19a2 2 0 0 1-2 2z"/></svg>
+        </div>
+        <div>
+          <h1 class="text-xl sm:text-2xl font-extrabold text-slate-900">Emitir e ancorar extrato</h1>
+          <p class="text-xs text-slate-500">Core Banking Simulator · Protocolo de Integridade Documental</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-2">
+        <span class="bg-teal-50 border border-teal-200 text-teal-800 text-xs font-bold rounded-full px-3 py-1">Tipo B · detalhado</span>
+        <button type="button" id="fillTestBtn" class="bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-bold px-3 py-2 rounded-xl">✨ Preencher teste</button>
+      </div>
+    </header>
+
+    <form id="anchorForm" class="space-y-6">
+      <section class="card bg-slate-50/70">
+        <h2 class="font-bold text-sm text-slate-800 mb-3">Ligação à API</h2>
+        <label class="field-label" for="apiBaseUrl">URL base da API</label>
+        <input class="field font-mono text-xs" id="apiBaseUrl" type="url" required value="https://api-blockchain-pfc-1021823144662.africa-south1.run.app" spellcheck="false" autocomplete="off">
+        <p class="muted-note mt-2">Endpoint: <code>POST /api/v1/documents/anchor/type-b</code>. Para testes locais, usa <code>http://localhost:8080</code>.</p>
+      </section>
+
+      <section class="card border-amber-200 bg-amber-50/70">
+        <label class="field-label text-amber-900" for="privateKey">🔑 Chave privada operacional do banco (somente ambiente de teste)</label>
+        <div class="flex gap-2">
+          <input class="field bg-white font-mono" id="privateKey" type="password" required placeholder="0x..." autocomplete="off" spellcheck="false" minlength="64" maxlength="66">
+          <button type="button" id="toggleKeyBtn" class="px-3 rounded-xl border border-amber-300 bg-white text-xs font-bold text-amber-800">Mostrar</button>
+        </div>
+        <p class="text-xs mt-2 text-amber-800">Esta demonstração segue o contrato actual da API, que recebe a chave no pedido. Não utilizes chaves reais: num sistema bancário, a assinatura deve ocorrer num serviço protegido, sem expor a chave ao browser.</p>
+      </section>
+
+      <section class="card">
+        <h2 class="font-bold text-slate-900 mb-4">Informações do extrato</h2>
+        <div class="grid sm:grid-cols-2 gap-4">
+          <div>
+            <label class="field-label" for="banco">Banco emissor</label>
+            <input class="field" id="banco" required maxlength="120" placeholder="Ex.: BCI" autocomplete="organization">
+          </div>
+          <div>
+            <label class="field-label" for="titular">Titular da conta</label>
+            <input class="field" id="titular" required maxlength="200" placeholder="Nome do titular">
+          </div>
+          <div>
+            <label class="field-label" for="periodo">Período</label>
+            <input class="field" id="periodo" required placeholder="2026-10-01 a 2026-10-31">
+          </div>
+          <div>
+            <label class="field-label">Saldo final (MZN)</label>
+            <div class="grid grid-cols-[1fr_110px] gap-2">
+              <div><input class="field tabular" id="saldoInteiro" type="number" step="1" min="0" required placeholder="Parte inteira"><span class="muted-note">Parte inteira</span></div>
+              <div><input class="field tabular" id="saldoCentavos" type="number" step="1" min="0" max="99" required placeholder="00"><span class="muted-note">Centavos</span></div>
+            </div>
+          </div>
+        </div>
+        <p class="muted-note mt-3">O <code>issuedAt</code> é criado pela API. Os campos <code>contaHash</code>, <code>saldoFinal</code> textual e <code>transactionsHash</code> pertenciam ao formulário anterior e não são enviados pelo DTO Tipo B actual.</p>
+      </section>
+
+      <section class="card">
+        <div class="flex flex-wrap justify-between items-center gap-2 mb-3">
+          <div>
+            <h2 class="font-bold text-slate-900">Histórico de transacções</h2>
+            <p class="muted-note">Data, parte inteira, centavos, débito/crédito e descrição.</p>
+          </div>
+          <button type="button" id="addTxBtn" class="bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100 font-bold text-xs px-3 py-2 rounded-xl">+ Adicionar transacção</button>
+        </div>
+        <div id="transactions" class="space-y-3"></div>
+        <p id="txCount" class="text-xs text-slate-500 mt-3"></p>
+      </section>
+
+      <button type="submit" id="submitBtn" class="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-blue-500/20 flex items-center justify-center gap-2">
+        <span id="btnText">Emitir Tipo B e ancorar na blockchain</span>
+        <span id="btnSpinner" class="hidden animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></span>
+      </button>
+    </form>
+
+    <div id="errorBox" role="alert" class="hidden mt-5 p-4 rounded-xl text-sm bg-rose-50 border border-rose-200 text-rose-800 whitespace-pre-wrap"></div>
+
+    <section id="resultCard" class="hidden mt-8 border border-emerald-200 bg-emerald-50/30 rounded-2xl p-4 sm:p-6">
+      <h2 class="text-lg font-bold text-emerald-800 mb-2">✓ Extrato Tipo B ancorado no Besu</h2>
+      <p class="muted-note mb-5">O QR abaixo contém os bytes do envelope CBOR: metadados, payload ZLIB e assinatura ECDSA. Não contém a string Base64.</p>
+      <div class="grid md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-5 items-start">
+        <div class="card text-center">
+          <div id="qrcode" class="bg-white p-2 rounded-lg flex items-center justify-center min-h-44">
+            <canvas id="qrCanvas" class="hidden" aria-label="QR Code binário do extrato Tipo B"></canvas>
+            <p id="qrPlaceholder" class="text-xs text-slate-500">A gerar QR binário…</p>
+          </div>
+          <p id="qrStatus" class="mt-3 text-xs text-slate-600" aria-live="polite"></p>
+          <div class="flex gap-2 justify-center flex-wrap mt-3">
+            <button id="downloadQrBtn" type="button" disabled class="bg-blue-600 text-white px-3 py-2 rounded-lg font-bold text-xs disabled:opacity-40">Guardar QR PNG</button>
+            <button id="downloadCborBtn" type="button" disabled class="border border-slate-300 bg-white text-slate-700 px-3 py-2 rounded-lg font-bold text-xs disabled:opacity-40">Guardar CBOR</button>
+          </div>
+        </div>
+        <div class="card text-xs font-mono break-all text-slate-700 space-y-3">
+          <div><strong class="block font-sans text-slate-900 mb-1">Document Hash · SHA-256</strong><span id="outDocumentHash" class="text-blue-700"></span></div>
+          <div><strong class="block font-sans text-slate-900 mb-1">Transaction Hash · Besu</strong><span id="outTxHash" class="text-emerald-700"></span></div>
+          <div><strong class="block font-sans text-slate-900 mb-1">Endereço do emissor</strong><span id="outSignerAddress"></span></div>
+          <div><strong class="block font-sans text-slate-900 mb-1">Data de emissão</strong><span id="outIssuedAt"></span></div>
+          <div><strong class="block font-sans text-slate-900 mb-1">Envelope binário</strong><span id="outQrLength"></span></div>
+        </div>
+      </div>
+      <div class="mt-5 pt-4 border-t border-slate-200">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <strong class="text-xs text-slate-800">Envelope CBOR transportado em Base64 na resposta HTTP</strong>
+          <button id="copyBase64Btn" type="button" disabled class="bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-700 disabled:opacity-40">Copiar Base64</button>
+        </div>
+        <pre id="outBase64" class="bg-slate-900 text-emerald-300 p-4 rounded-xl text-xs font-mono leading-relaxed max-h-32 overflow-auto whitespace-pre-wrap break-all mt-2"></pre>
+        <strong class="text-xs text-slate-800 block mt-4">Pré-visualização dos dados enviados (JSON da requisição, não o CBOR decodificado)</strong>
+        <pre id="outRequest" class="bg-slate-900 text-emerald-300 p-4 rounded-xl text-xs font-mono leading-relaxed max-h-60 overflow-auto whitespace-pre-wrap break-all mt-2"></pre>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    'use strict';
+    const $ = id => document.getElementById(id);
+    const ENDPOINT = '/api/v1/documents/anchor/type-b';
+    const QR_LIMIT_M_BYTES = 2331; // Versão 40, modo byte, correcção M (limite teórico).
+    let envelopeBytes = null;
+    let lastBase64 = '';
+    let qrAvailable = false;
+
+    function showError(message) {
+      $('errorBox').textContent = message;
+      $('errorBox').classList.remove('hidden');
+    }
+    function clearError() {
+      $('errorBox').textContent = '';
+      $('errorBox').classList.add('hidden');
+    }
+
+    function makeTransaction(data = {}) {
+      const row = document.createElement('div');
+      row.className = 'transaction-row bg-slate-50 border border-slate-200 rounded-xl p-3';
+      row.innerHTML = `
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="text-xs font-bold text-slate-800 txTitle">Movimento</h3>
+          <button type="button" class="removeTxBtn text-xs text-rose-700 border border-rose-200 rounded-lg bg-white px-3 py-1.5 hover:bg-rose-50">Remover</button>
+        </div>
+        <div class="grid grid-cols-2 sm:grid-cols-5 gap-2 sm:gap-3">
+          <div><label class="field-label">Data</label><input class="field txDate" type="date" required></div>
+          <div><label class="field-label">Inteiro (MT)</label><input class="field txInteiro" type="number" step="1" min="0" required placeholder="1500"></div>
+          <div><label class="field-label">Centavos</label><input class="field txCentavos" type="number" step="1" min="0" max="99" required placeholder="25"></div>
+          <div><label class="field-label">Movimento</label><select class="field txTipo" required><option value="C">Crédito</option><option value="D">Débito</option></select></div>
+          <div class="col-span-2 sm:col-span-1"><label class="field-label">Descrição</label><input class="field txDescricao" type="text" required maxlength="250" placeholder="Transferência"></div>
+        </div>`;
+      row.querySelector('.txDate').value = data.data || '';
+      row.querySelector('.txInteiro').value = data.parteInteiraDoValor ?? '';
+      row.querySelector('.txCentavos').value = data.parteDeCentavosDoValor ?? '';
+      row.querySelector('.txTipo').value = data.tipoMovimento || 'C';
+      row.querySelector('.txDescricao').value = data.descricao || '';
+      row.querySelector('.removeTxBtn').addEventListener('click', () => {
+        row.remove();
+        refreshTxCount();
+      });
+      $('transactions').appendChild(row);
+      refreshTxCount();
+    }
+
+    function refreshTxCount() {
+      const rows = Array.from(document.querySelectorAll('.transaction-row'));
+      rows.forEach((row, index) => { row.querySelector('.txTitle').textContent = `Movimento ${index + 1}`; });
+      $('txCount').textContent = `${rows.length} movimento(s) no pedido. Pelo menos um é obrigatório.`;
+    }
+
+    function readNonnegativeInt(element, fieldName, max = Number.MAX_SAFE_INTEGER) {
+      const input = $(element);
+      const raw = input.value.trim();
+      if (!/^\d+$/.test(raw)) throw new Error(`${fieldName}: introduz um número inteiro não negativo.`);
+      const value = Number(raw);
+      if (!Number.isSafeInteger(value) || value > max) throw new Error(`${fieldName}: valor fora do intervalo permitido.`);
+      return value;
+    }
+
+    function readTxNonnegativeInt(row, cls, fieldName, max = Number.MAX_SAFE_INTEGER) {
+      const raw = row.querySelector(cls).value.trim();
+      if (!/^\d+$/.test(raw)) throw new Error(`${fieldName}: introduz um número inteiro não negativo.`);
+      const value = Number(raw);
+      if (!Number.isSafeInteger(value) || value > max) throw new Error(`${fieldName}: valor fora do intervalo permitido.`);
+      return value;
+    }
+
+    function makePayload() {
+      const rows = Array.from(document.querySelectorAll('.transaction-row'));
+      if (rows.length === 0) throw new Error('Adiciona pelo menos uma transacção.');
+      const transactions = rows.map((row, index) => {
+        const n = index + 1;
+        const data = row.querySelector('.txDate').value;
+        const descricao = row.querySelector('.txDescricao').value.trim();
+        const tipoMovimento = row.querySelector('.txTipo').value;
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(data)) throw new Error(`Transacção ${n}: data inválida.`);
+        if (!descricao || descricao.length > 250) throw new Error(`Transacção ${n}: descrição obrigatória (máximo de 250 caracteres).`);
+        if (!['C','D'].includes(tipoMovimento)) throw new Error(`Transacção ${n}: tipo de movimento inválido.`);
+        return {
+          data,
+          parteInteiraDoValor: readTxNonnegativeInt(row, '.txInteiro', `Transacção ${n}, parte inteira`),
+          parteDeCentavosDoValor: readTxNonnegativeInt(row, '.txCentavos', `Transacção ${n}, centavos`, 99),
+          tipoMovimento,
+          descricao
+        };
+      });
+      const privateKey = $('privateKey').value.trim();
+      if (!/^(0x)?[0-9a-fA-F]{64}$/.test(privateKey)) {
+        throw new Error('A chave privada de teste deve conter 64 algarismos hexadecimais, com prefixo 0x opcional.');
+      }
+      return {
+        privateKey,
+        banco: $('banco').value.trim(),
+        titular: $('titular').value.trim(),
+        parteInteiraDoSaldoFinal: readNonnegativeInt('saldoInteiro', 'Saldo final, parte inteira'),
+        parteDeCentavosDoSaldoFinal: readNonnegativeInt('saldoCentavos', 'Saldo final, centavos', 99),
+        periodo: $('periodo').value.trim(),
+        transactions
+      };
+    }
+
+    function decodeBase64ToBytes(base64) {
+      const raw = atob(base64);
+      const bytes = new Uint8Array(raw.length);
+      for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+      return bytes;
+    }
+
+    function downloadBlob(blob, filename) {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1500);
+    }
+
+    async function drawBinaryQr(bytes) {
+      if (typeof QRCode === 'undefined' || typeof QRCode.toCanvas !== 'function') {
+        throw new Error('Biblioteca de QR Code indisponível. Verifica a ligação ao CDN.');
+      }
+      if (bytes.length > QR_LIMIT_M_BYTES) {
+        throw new Error(`Envelope de ${bytes.length} bytes excede a capacidade teórica do QR em modo Byte/M (${QR_LIMIT_M_BYTES} bytes). Reduz o histórico de transacções.`);
+      }
+      // Segmento byte verdadeiro: não converter para string nem para Base64!
+      const byteSegment = [{ data: Uint8ClampedArray.from(bytes), mode: 'byte' }];
+      const canvas = $('qrCanvas');
+      canvas.classList.remove('hidden');
+      await QRCode.toCanvas(canvas, byteSegment, {
+        errorCorrectionLevel: 'M',
+        margin: 4,
+        scale: 6,
+        color: { dark: '#0f172aff', light: '#ffffffff' }
+      });
+      $('qrPlaceholder').classList.add('hidden');
+      qrAvailable = true;
+      $('downloadQrBtn').disabled = false;
+      $('qrStatus').textContent = `QR binário criado a partir de ${bytes.length} bytes CBOR (modo Byte, ECC M).`;
+    }
+
+    function fillTestData() {
+      $('banco').value = 'BCI';
+      $('titular').value = 'Cliente de Teste';
+      $('periodo').value = '2026-10-01 a 2026-10-31';
+      $('saldoInteiro').value = 3500;
+      $('saldoCentavos').value = 50;
+      $('transactions').replaceChildren();
+      makeTransaction({data:'2026-10-05', parteInteiraDoValor:1500, parteDeCentavosDoValor:25, tipoMovimento:'C', descricao:'TRANSFERENCIA RECEBIDA'});
+      makeTransaction({data:'2026-10-12', parteInteiraDoValor:500, parteDeCentavosDoValor:50, tipoMovimento:'D', descricao:'LEVANTAMENTO ATM'});
+      // Por segurança, a chave privada não é preenchida nem guardada automaticamente.
+    }
+
+    $('toggleKeyBtn').addEventListener('click', () => {
+      const show = $('privateKey').type === 'password';
+      $('privateKey').type = show ? 'text' : 'password';
+      $('toggleKeyBtn').textContent = show ? 'Ocultar' : 'Mostrar';
+    });
+    $('addTxBtn').addEventListener('click', () => makeTransaction());
+    $('fillTestBtn').addEventListener('click', fillTestData);
+
+    $('copyBase64Btn').addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(lastBase64);
+        $('copyBase64Btn').textContent = 'Copiado!';
+        setTimeout(() => { $('copyBase64Btn').textContent = 'Copiar Base64'; }, 1400);
+      } catch (e) { showError('Não foi possível copiar. Selecciona manualmente o Base64 no painel.'); }
+    });
+    $('downloadQrBtn').addEventListener('click', () => {
+      if (!qrAvailable) return;
+      $('qrCanvas').toBlob(blob => {
+        if (blob) downloadBlob(blob, 'extrato_tipo_b_qr.png');
+        else showError('Não foi possível gerar o PNG.');
+      }, 'image/png');
+    });
+    $('downloadCborBtn').addEventListener('click', () => {
+      if (!envelopeBytes) return;
+      downloadBlob(new Blob([envelopeBytes], {type:'application/cbor'}), 'extrato_tipo_b_envelope.cbor');
+    });
+
+    $('anchorForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      clearError();
+      $('resultCard').classList.add('hidden');
+      $('submitBtn').disabled = true;
+      $('btnText').textContent = 'A emitir e ancorar...';
+      $('btnSpinner').classList.remove('hidden');
+      envelopeBytes = null;
+      lastBase64 = '';
+      qrAvailable = false;
+      $('downloadQrBtn').disabled = true;
+      $('downloadCborBtn').disabled = true;
+      $('copyBase64Btn').disabled = true;
+      $('qrCanvas').classList.add('hidden');
+      $('qrPlaceholder').classList.remove('hidden');
+      $('qrStatus').textContent = '';
+      try {
+        const payload = makePayload();
+        const apiBase = $('apiBaseUrl').value.trim().replace(/\/+$/, '');
+        const response = await fetch(`${apiBase}${ENDPOINT}`, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(payload)
+        });
+        const bodyText = await response.text();
+        let data;
+        try { data = JSON.parse(bodyText); }
+        catch (_) { throw new Error(`Resposta HTTP ${response.status} não é JSON. ${bodyText.slice(0, 150)}`); }
+        if (!response.ok) {
+          const msg = data.error || data.message || `HTTP ${response.status}`;
+          throw new Error(`Falha de emissão (${response.status}): ${msg}`);
+        }
+        if (!data.qrCodeDataBase64 || !data.documentHash || !data.transactionHash) {
+          throw new Error('A resposta não contém qrCodeDataBase64, documentHash ou transactionHash. Confirma a versão da API Tipo B.');
+        }
+        lastBase64 = data.qrCodeDataBase64;
+        envelopeBytes = decodeBase64ToBytes(lastBase64);
+        if (typeof data.qrByteLength === 'number' && data.qrByteLength !== envelopeBytes.length) {
+          throw new Error('A quantidade de bytes recuperados do Base64 não corresponde a qrByteLength.');
+        }
+        $('outDocumentHash').textContent = data.documentHash;
+        $('outTxHash').textContent = data.transactionHash;
+        $('outSignerAddress').textContent = data.signerAddress || '—';
+        $('outIssuedAt').textContent = data.issuedAt || '—';
+        $('outQrLength').textContent = `${envelopeBytes.length} bytes (CBOR binário)`;
+        $('outBase64').textContent = lastBase64;
+        const preview = {...payload};
+        delete preview.privateKey;
+        $('outRequest').textContent = JSON.stringify(preview, null, 2);
+        $('resultCard').classList.remove('hidden');
+        $('downloadCborBtn').disabled = false;
+        $('copyBase64Btn').disabled = false;
+        try {
+          await drawBinaryQr(envelopeBytes);
+        } catch (qrError) {
+          $('qrCanvas').classList.add('hidden');
+          $('qrPlaceholder').textContent = 'QR não gerado';
+          $('qrPlaceholder').classList.remove('hidden');
+          $('qrStatus').textContent = `Documento ancorado, mas não foi possível gerar o QR: ${qrError.message}`;
+          showError(`ATENÇÃO: o documento já foi ancorado na blockchain, mas falhou a geração local do QR. ${qrError.message}\nPodes guardar o envelope CBOR para análise.`);
+        }
+      } catch (err) {
+        console.error('Erro Tipo B:', err);
+        showError(err instanceof Error ? err.message : 'Erro inesperado ao emitir o extracto.');
+      } finally {
+        $('submitBtn').disabled = false;
+        $('btnText').textContent = 'Emitir Tipo B e ancorar na blockchain';
+        $('btnSpinner').classList.add('hidden');
+      }
+    });
+    makeTransaction();
+  </script>
+</body>
+</html>
